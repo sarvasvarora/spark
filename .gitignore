@@ -1,3 +1,17 @@
+# ignore files 
+
 model.pt
 train_ds.pickle
 test_ds.pickle
+
+# ignore folders 
+__pycache__/
+.vscode
+benchmark/
+
+models/__pycache__/
+
+
+save/*
+
+*.pyc
