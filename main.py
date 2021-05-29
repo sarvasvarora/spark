@@ -264,15 +264,14 @@ def perform_attack(attacker, model, model_clean, train_loader, test_loader,
         break
 
     # evaluate the test accuracy of clean model
-    val_acc_top1, val_acc_top5, val_loss, output_summary = validate(test_loader, model,
+    acc, val_loss, output_summary = validate(test_loader, model,
                                                                     attacker.criterion, log, summary_output=True)
     tmp_df = pd.DataFrame(output_summary, columns=['top-1 output'])
     tmp_df['BFA iteration'] = 0
     tmp_df.to_csv(os.path.join(args.save_path, 'output_summary_BFA_0.csv'),
                   index=False)
 
-    writer.add_scalar('attack/val_top1_acc', val_acc_top1, 0)
-    writer.add_scalar('attack/val_top5_acc', val_acc_top5, 0)
+    writer.add_scalar('attack/acc', acc, 0)
     writer.add_scalar('attack/val_loss', val_loss, 0)
 
     print_log('k_top is set to {}'.format(args.k_top), log)
@@ -280,7 +279,7 @@ def perform_attack(attacker, model, model_clean, train_loader, test_loader,
     end = time.time()
 
     df = pd.DataFrame()  # init a empty dataframe for logging
-    last_val_acc_top1 = val_acc_top1
+    last_acc = acc
 
     for i_iter in range(N_iter):
         print_log('**********************************', log)
@@ -323,7 +322,7 @@ def perform_attack(attacker, model, model_clean, train_loader, test_loader,
         writer.add_scalar('attack/sample_loss', losses.avg, i_iter + 1)
 
         # exam the BFA on entire val/test dataset
-        val_acc_top1, val_acc_top5, val_loss, output_summary = validate(
+        acc, val_loss, output_summary = validate(
             test_loader, model, attacker.criterion, log, summary_output=True)
         tmp_df = pd.DataFrame(output_summary, columns=['top-1 output'])
         tmp_df['BFA iteration'] = i_iter + 1
@@ -331,18 +330,17 @@ def perform_attack(attacker, model, model_clean, train_loader, test_loader,
                       index=False)
 
         # add additional info for logging
-        acc_drop = last_val_acc_top1 - val_acc_top1
-        last_val_acc_top1 = val_acc_top1
+        acc_drop = last_acc - acc
+        last_acc = acc
 
         # print(attack_log)
         for i in range(attack_log.__len__()):
-            attack_log[i].append(val_acc_top1)
+            attack_log[i].append(acc)
             attack_log[i].append(acc_drop)
         # print(attack_log)
         df = df.append(attack_log, ignore_index=True)
 
-        writer.add_scalar('attack/val_top1_acc', val_acc_top1, i_iter + 1)
-        writer.add_scalar('attack/val_top5_acc', val_acc_top5, i_iter + 1)
+        writer.add_scalar('attack/acc', acc, i_iter + 1)
         writer.add_scalar('attack/val_loss', val_loss, i_iter + 1)
 
         # measure elapsed time
@@ -357,7 +355,7 @@ def perform_attack(attacker, model, model_clean, train_loader, test_loader,
             break_acc = 11.0
         elif args.dataset == 'imagenet':
             break_acc = 0.2
-        if val_acc_top1 <= break_acc:
+        if acc <= break_acc:
             break
 
     # attack profile
@@ -407,7 +405,7 @@ def validate(val_loader, model, criterion, log, summary_output=False):
             # measure accuracy and record loss
             prec1 = accuracy(output.data, target)
             losses.update(loss.item(), inp.size(0))
-            acc.update(prec1.item(), inp.size(0))
+            acc.update(prec1, inp.size(0))
 
         print_log(
             '  **Test** Prec@1 {top1.avg:.3f} Error@1 {error1:.3f}'
