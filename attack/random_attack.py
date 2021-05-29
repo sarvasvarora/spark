@@ -1,6 +1,6 @@
 import random
 import torch
-from models.quantization import quan_Conv2d, quan_Linear, quantize
+from models.quantization import quan_Linear, quantize
 import operator
 from attack.data_conversion import *
 
@@ -9,7 +9,7 @@ class random_flip(object):
     def __init__(self, model):
         self.module_list = []
         for name, m in model.named_modules():
-            if isinstance(m, quan_Conv2d) or isinstance(m, quan_Linear):
+            if isinstance(m, quan_Linear):
                 self.module_list.append(name)
 
     def random_flip_one_bit(self, model):
