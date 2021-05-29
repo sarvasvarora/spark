@@ -4,6 +4,7 @@ from __future__ import absolute_import
 import os
 import sys
 import shutil
+import re
 import time
 import random
 import argparse
@@ -24,6 +25,8 @@ import copy
 
 import pandas as pd
 import numpy as np
+
+from models.quan_bert import IMDBSentimentClassifier
 
 model_names = sorted(name for name in models.__dict__
                      if name.islower() and not name.startswith("__")
@@ -104,6 +107,12 @@ parser.add_argument('--random_bfa',
                     action='store_true',
                     help='perform the bit-flips randomly on weight bits')
 
+# Evaluation/Validation
+parser.add_argument('--evaluate',
+                    dest='evaluate',
+                    action='store_true',
+                    help='evaluate model on validation set')
+
 # Piecewise clustering
 parser.add_argument('--clustering',
                     dest='clustering',
@@ -183,7 +192,6 @@ def main():
     # Init model and criterion
     net = models.__dict__[args.model]()
 
-    torch.load(args.model)
     print_log("=> network :\n {}".format(net), log)
 
     if args.use_cuda:
@@ -204,7 +212,7 @@ def main():
     # update the step_size once the model is loaded. This is used for
     # quantization.
     for m in net.modules():
-        if isinstance(m, quan_Conv2d) or isinstance(m, quan_Linear):
+        if isinstance(m, quan_Linear):
             # simple step size update based on the pretrained model or weight
             # init
             m.__reset_stepsize__()
@@ -212,7 +220,7 @@ def main():
     # block for weight reset
     if args.reset_weight:
         for m in net.modules():
-            if isinstance(m, quan_Conv2d) or isinstance(m, quan_Linear):
+            if isinstance(m, quan_Linear):
                 m.__reset_weight__()
                 # print(m.weight)
 
@@ -245,7 +253,9 @@ def perform_attack(attacker, model, model_clean, train_loader, test_loader,
     attack_time = AverageMeter()
 
     # attempt to use the training data to conduct BFA
-    for _, (data, target) in enumerate(train_loader):
+    for _, batch in enumerate(train_loader):
+        data = batch['input_ids']
+        target = batch['label']
         if args.use_cuda:
             target = target.cuda(non_blocking=True)
             data = data.cuda()
@@ -369,21 +379,22 @@ def perform_attack(attacker, model, model_clean, train_loader, test_loader,
 
 def validate(val_loader, model, criterion, log, summary_output=False):
     losses = AverageMeter()
-    top1 = AverageMeter()
-    top5 = AverageMeter()
+    acc = AverageMeter()
 
     # switch to evaluate mode
     model.eval()
     output_summary = []  # init a list for output summary
 
     with torch.no_grad():
-        for i, (input, target) in enumerate(val_loader):
+        for i, batch in enumerate(val_loader):
+            inp = batch['input_ids']
+            target = batch['label']
             if args.use_cuda:
                 target = target.cuda(non_blocking=True)
-                input = input.cuda()
+                inp = inp.cuda()
 
             # compute output
-            output = model(input)
+            output = model(inp)
             loss = criterion(output, target)
 
             # summary the output
@@ -394,20 +405,19 @@ def validate(val_loader, model, criterion, log, summary_output=False):
                 output_summary.append(tmp_list)
 
             # measure accuracy and record loss
-            prec1, prec5 = accuracy(output.data, target, topk=(1, 5))
-            losses.update(loss.item(), input.size(0))
-            top1.update(prec1.item(), input.size(0))
-            top5.update(prec5.item(), input.size(0))
+            prec1 = accuracy(output.data, target)
+            losses.update(loss.item(), inp.size(0))
+            acc.update(prec1.item(), inp.size(0))
 
         print_log(
-            '  **Test** Prec@1 {top1.avg:.3f} Prec@5 {top5.avg:.3f} Error@1 {error1:.3f}'
-            .format(top1=top1, top5=top5, error1=100 - top1.avg), log)
+            '  **Test** Prec@1 {top1.avg:.3f} Error@1 {error1:.3f}'
+            .format(acc=acc, error1=100 - acc.avg), log)
 
     if summary_output:
         output_summary = np.asarray(output_summary).flatten()
-        return top1.avg, top5.avg, losses.avg, output_summary
+        return acc.avg, losses.avg, output_summary
     else:
-        return top1.avg, top5.avg, losses.avg
+        return acc.avg, losses.avg
 
 
 def print_log(print_string, log):
@@ -425,40 +435,16 @@ def save_checkpoint(state, is_best, save_path, filename, log):
         print_log("=> Obtain best accuracy, and update the best model", log)
 
 
-def adjust_learning_rate(optimizer, epoch, gammas, schedule):
-    """Sets the learning rate to the initial LR decayed by 10 every 30 epochs"""
-    lr = args.learning_rate
-    mu = args.momentum
-
-    if args.optimizer != "YF":
-        assert len(gammas) == len(
-            schedule), "length of gammas and schedule should be equal"
-        for (gamma, step) in zip(gammas, schedule):
-            if (epoch >= step):
-                lr = lr * gamma
-            else:
-                break
-        for param_group in optimizer.param_groups:
-            param_group['lr'] = lr
-
-    elif args.optimizer == "YF":
-        lr = optimizer._lr
-        mu = optimizer._mu
-
-    return lr, mu
-
-
-def accuracy(output, target, topk=(1, )):
+def accuracy(output, target):
     """Computes the precision@k for the specified values of k"""
     with torch.no_grad():
-        maxk = max(topk)
         batch_size = target.size(0)
 
-        _, pred = output.topk(maxk, 1, True, True)
+        _, pred = output.topk(1, 1, True, True)
         pred = pred.t()
         correct = pred.eq(target.view(1, -1).expand_as(pred))
         res = []
-        for k in topk:
+        for k in [1]:
             correct_k = correct[:k].view(-1).float().sum(0)
             res.append(correct_k.mul_(100.0 / batch_size))
         return res
