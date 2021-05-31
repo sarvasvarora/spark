@@ -351,12 +351,12 @@ def perform_attack(attacker, model, model_clean, train_loader, test_loader,
         end = time.time()
 
         # Stop the attack if the accuracy is below the configured break_acc.
-        if args.dataset == 'cifar10':
-            break_acc = 11.0
-        elif args.dataset == 'imagenet':
-            break_acc = 0.2
-        if acc <= break_acc:
-            break
+        # if args.dataset == 'cifar10':
+        #     break_acc = 11.0
+        # elif args.dataset == 'imagenet':
+        #     break_acc = 0.2
+        # if acc <= break_acc:
+        #     break
 
     # attack profile
     column_list = ['module idx', 'bit-flip idx', 'module name', 'weight idx',
@@ -405,10 +405,10 @@ def validate(val_loader, model, criterion, log, summary_output=False):
             # measure accuracy and record loss
             prec1 = accuracy(output.data, target)
             losses.update(loss.item(), inp.size(0))
-            acc.update(prec1, inp.size(0))
+            acc.update(prec1[0], inp.size(0))
 
         print_log(
-            '  **Test** Prec@1 {top1.avg:.3f} Error@1 {error1:.3f}'
+            '  **Test** Prec@1 {acc.avg:.3f} Error@1 {error1:.3f}'
             .format(acc=acc, error1=100 - acc.avg), log)
 
     if summary_output:
