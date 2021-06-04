@@ -1,6 +1,6 @@
 import random
 import torch
-from models.quantization import quan_Linear, quantize
+from models.quantization import quan_Linear, quan_LSTM, quantize
 import operator
 from attack.data_conversion import *
 
@@ -15,12 +15,12 @@ class BFA(object):
         self.k_top = k_top
         self.n_bits2flip = 0
         self.loss = 0
-        
+
         # attributes for random attack
         self.module_list = []
         for name, m in model.named_modules():
             if isinstance(m, quan_Linear):
-                self.module_list.append(name)       
+                self.module_list.append(name)
 
     def flip_bit(self, m):
         '''
@@ -29,7 +29,7 @@ class BFA(object):
         '''
         if self.k_top is None:
             k_top = m.weight.detach().flatten().__len__()
-        else: 
+        else:
             k_top = self.k_top
         # 1. flatten the gradient tensor to perform topk
         w_grad_topk, w_idx_topk = m.weight.grad.detach().abs().view(-1).topk(k_top)
@@ -47,11 +47,12 @@ class BFA(object):
         w_bin = int2bin(m.weight.detach().view(-1), m.N_bits).short()
         w_bin_topk = w_bin[w_idx_topk]  # get the weights whose grads are topk
         # generate two's complement bit-map
-        b_bin_topk = (w_bin_topk.repeat(m.N_bits,1) & m.b_w.abs().repeat(1,k_top).short()) \
-        // m.b_w.abs().repeat(1,k_top).short()
+        b_bin_topk = (w_bin_topk.repeat(m.N_bits, 1) & m.b_w.abs().repeat(1, k_top).short()) \
+            // m.b_w.abs().repeat(1, k_top).short()
         grad_mask = b_bin_topk ^ b_grad_topk_sign.short()
 
-        # 4. apply the gradient mask upon ```b_grad_topk``` and in-place update it
+        # 4. apply the gradient mask upon ```b_grad_topk``` and in-place update
+        # it
         b_grad_topk *= grad_mask.float()
 
         # 5. identify the several maximum of absolute bit gradient and return the
@@ -69,7 +70,7 @@ class BFA(object):
         # 6. Based on the identified bit indexed by ```bit2flip```, generate another
         # mask, then perform the bitwise xor operation to realize the bit-flip.
         w_bin_topk_flipped = (bit2flip.short() * m.b_w.abs().short()).sum(0, dtype=torch.int16) \
-                ^ w_bin_topk
+            ^ w_bin_topk
 
         # 7. update the weight in the original weight tensor
         w_bin[w_idx_topk] = w_bin_topk_flipped  # in-place change
@@ -79,12 +80,13 @@ class BFA(object):
         return param_flipped
 
     def progressive_bit_search(self, model, data, target):
-        ''' 
+        '''
         Given the model, base on the current given data and target, go through
-        all the layer and identify the bits to be flipped. 
+        all the layer and identify the bits to be flipped.
         '''
         # Note that, attack has to be done in evaluation model due to batch-norm.
-        # see: https://discuss.pytorch.org/t/what-does-model-eval-do-for-batchnorm-layer/7146
+        # see:
+        # https://discuss.pytorch.org/t/what-does-model-eval-do-for-batchnorm-layer/7146
         model.eval()
 
         # 1. perform the inference w.r.t given data and target
@@ -93,11 +95,17 @@ class BFA(object):
         self.loss = self.criterion(output, target)
         # 2. zero out the grads first, then get the grads
         for m in model.modules():
-            if isinstance(m, quan_Linear):
+            if isinstance(m, quan_Linear) or isinstance(m, quan_LSTM):
                 if m.weight.grad is not None:
                     m.weight.grad.data.zero_()
+                if isinstance(m, quan_LSTM):
+                    m.zero_grad()
 
         self.loss.backward()
+        for m in model.modules():
+            if isinstance(m, quan_LSTM):
+                m.__update__("weight")
+
         # init the loss_max to enable the while loop
         self.loss_max = self.loss.item()
 
@@ -107,19 +115,26 @@ class BFA(object):
             self.n_bits2flip += 1
             # iterate all the quantized conv and linear layer
             for name, module in model.named_modules():
-                if isinstance(
-                        module, quan_Linear):
+                if isinstance(module, quan_Linear) or isinstance(m, quan_LSTM):
                     clean_weight = module.weight.data.detach()
                     attack_weight = self.flip_bit(module)
                     # change the weight to attacked weight and get loss
                     module.weight.data = attack_weight
+
+                    if isinstance(m, quan_LSTM):
+                        m.__update__("flat_weights")
+
                     output = model(data)
                     self.loss_dict[name] = self.criterion(output,
                                                           target).item()
                     # change the weight back to the clean weight
                     module.weight.data = clean_weight
 
-            # after going through all the layer, now we find the layer with max loss
+                    if isinstance(m, quan_LSTM):
+                        m.__update__("flat_weights")
+
+            # after going through all the layer, now we find the layer with max
+            # loss
             max_loss_module = max(self.loss_dict.items(),
                                   key=operator.itemgetter(1))[0]
             self.loss_max = self.loss_dict[max_loss_module]
@@ -130,39 +145,42 @@ class BFA(object):
             if name == max_loss_module:
                 # print(name, self.loss.item(), loss_max)
                 attack_weight = self.flip_bit(module)
-                
-                ###########################################################
-                ## Attack profiling
+                if isinstance(module, quan_LSTM):
+                    module.__update__("flat_weights")
+                #############################################
+                # Attack profiling
                 #############################################
                 weight_mismatch = attack_weight - module.weight.detach()
                 attack_weight_idx = torch.nonzero(weight_mismatch)
-                
+
                 print('attacked module:', max_loss_module)
-                
-                attack_log = [] # init an empty list for profile
-                
+
+                attack_log = []  # init an empty list for profile
+
                 for i in range(attack_weight_idx.size()[0]):
-                    
-                    weight_idx = attack_weight_idx[i,:].cpu().numpy()
-                    weight_prior = module.weight.detach()[tuple(attack_weight_idx[i,:])].item()
-                    weight_post = attack_weight[tuple(attack_weight_idx[i,:])].item()
-                    
+
+                    weight_idx = attack_weight_idx[i, :].cpu().numpy()
+                    weight_prior = module.weight.detach(
+                    )[tuple(attack_weight_idx[i, :])].item()
+                    weight_post = attack_weight[tuple(
+                        attack_weight_idx[i, :])].item()
+
                     print('attacked weight index:', weight_idx)
                     print('weight before attack:', weight_prior)
                     print('weight after attack:', weight_post)
-                    
-                    tmp_list = [module_idx, # module index in the net
-                                self.bit_counter + (i+1), # current bit-flip index
-                                max_loss_module, # current bit-flip module
-                                weight_idx, # attacked weight index in weight tensor
-                                weight_prior, # weight magnitude before attack
-                                weight_post # weight magnitude after attack
-                                ] 
+
+                    tmp_list = [module_idx,  # module index in the net
+                                # current bit-flip index
+                                self.bit_counter + (i + 1),
+                                max_loss_module,  # current bit-flip module
+                                weight_idx,  # attacked weight index in weight tensor
+                                weight_prior,  # weight magnitude before attack
+                                weight_post  # weight magnitude after attack
+                                ]
                     attack_log.append(tmp_list)
 
-                ###############################################################    
-                
-                
+                ###############################################################
+
                 module.weight.data = attack_weight
 
         # reset the bits2flip back to 0
@@ -170,7 +188,6 @@ class BFA(object):
         self.n_bits2flip = 0
 
         return attack_log
-
 
     def random_flip_one_bit(self, model):
         """
@@ -188,42 +205,41 @@ class BFA(object):
                 mask = (bin_w.clone().zero_() + 1) * (2**bit_idx)
                 bin_w = bin_w ^ mask
                 int_w = bin2int(bin_w, m.N_bits).float()
-                
+                if isinstance(m, quan_LSTM):
+                    m.__update__("flat_weights")
+
                 ##############################################
-                ###   attack profiling
+                # attack profiling
                 ###############################################
-                
+
                 weight_mismatch = flatten_weight[chosen_idx] - int_w
                 attack_weight_idx = chosen_idx
-                
+
                 print('attacked module:', chosen_module)
-                
-                attack_log = [] # init an empty list for profile
-                
-                
+
+                attack_log = []  # init an empty list for profile
+
                 weight_idx = chosen_idx
                 weight_prior = flatten_weight[chosen_idx]
                 weight_post = int_w
 
                 print('attacked weight index:', weight_idx)
                 print('weight before attack:', weight_prior)
-                print('weight after attack:', weight_post)  
-                
-                tmp_list = ["module_idx", # module index in the net
-                            self.bit_counter + 1, # current bit-flip index
-                            "loss", # current bit-flip module
-                            weight_idx, # attacked weight index in weight tensor
-                            weight_prior, # weight magnitude before attack
-                            weight_post # weight magnitude after attack
-                            ] 
-                attack_log.append(tmp_list)                            
-                
+                print('weight after attack:', weight_post)
+
+                tmp_list = ["module_idx",  # module index in the net
+                            self.bit_counter + 1,  # current bit-flip index
+                            "loss",  # current bit-flip module
+                            weight_idx,  # attacked weight index in weight tensor
+                            weight_prior,  # weight magnitude before attack
+                            weight_post  # weight magnitude after attack
+                            ]
+                attack_log.append(tmp_list)
+
                 self.bit_counter += 1
                 #################################
-                
+
                 flatten_weight[chosen_idx] = int_w
                 m.weight.data = flatten_weight.view(m.weight.data.size())
-                
-            
-                
+
         return attack_log

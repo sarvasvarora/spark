@@ -1,37 +1,43 @@
-import os, sys, time, random
+import os
+import sys
+import time
+import random
 import numpy as np
 import matplotlib
 matplotlib.use('agg')
 import matplotlib.pyplot as plt
-from torch import nn
+from torch import nn, quantized_lstm_cell
 import torch
-from models.quantization import quan_Linear
+from models.quantization import quan_Linear, quan_LSTM
+
 
 def piecewise_clustering(var, lambda_coeff, l_norm):
-    var1=(var[var.ge(0)]-var[var.ge(0)].mean()).pow(l_norm).sum()
-    var2=(var[var.le(0)]-var[var.le(0)].mean()).pow(l_norm).sum()
-    return lambda_coeff*(var1+var2)
+    var1 = (var[var.ge(0)] - var[var.ge(0)].mean()).pow(l_norm).sum()
+    var2 = (var[var.le(0)] - var[var.le(0)].mean()).pow(l_norm).sum()
+    return lambda_coeff * (var1 + var2)
+
 
 def clustering_loss(model, lambda_coeff, l_norm=2):
-    
+
     pc_loss = 0
     for m in model.modules():
-        if isinstance(m, nn.Conv2d) or isinstance(m, nn.Linear):
+        if isinstance(m, nn.Linear) or isinstance(m, quan_LSTM):
             pc_loss += piecewise_clustering(m.weight, lambda_coeff, l_norm)
-    
-    return pc_loss 
+
+    return pc_loss
+
 
 def change_quan_bitwidth(model, n_bit):
     '''This script change the quantization bit-width of entire model to n_bit'''
     for m in model.modules():
-        if isinstance(m, quan_Conv2d) or isinstance(m, quan_Linear):
+        if isinstance(m, quan_Linear) or isinstance(m, quan_LSTM):
             m.N_bits = n_bit
             # print("Change weight bit-width as {}.".format(m.N_bits))
             m.b_w.data = m.b_w.data[-m.N_bits:]
             m.b_w[0] = -m.b_w[0]
             print(m.b_w)
-    return 
-            
+    return
+
 
 class AverageMeter(object):
     """Computes and stores the average and current value"""
@@ -81,9 +87,12 @@ class RecorderMeter(object):
         # return self.max_accuracy(False) == val_acc
 
     def max_accuracy(self, istrain):
-        if self.current_epoch <= 0: return 0
-        if istrain: return self.epoch_accuracy[:self.current_epoch, 0].max()
-        else: return self.epoch_accuracy[:self.current_epoch, 1].max()
+        if self.current_epoch <= 0:
+            return 0
+        if istrain:
+            return self.epoch_accuracy[:self.current_epoch, 0].max()
+        else:
+            return self.epoch_accuracy[:self.current_epoch, 1].max()
 
     def plot_curve(self, save_path):
         title = 'the accuracy/loss curve of train/val'

@@ -17,7 +17,7 @@ from transformers import BertForSequenceClassification, BertTokenizer
 from utils import AverageMeter, RecorderMeter, time_string, convert_secs2time, clustering_loss, change_quan_bitwidth
 from tensorboardX import SummaryWriter
 import models
-from models.quantization import quan_Linear, quantize
+from models.quantization import quan_Linear, quan_LSTM, quantize
 
 from attack.BFA import *
 import torch.nn.functional as F
@@ -181,11 +181,19 @@ def main():
 
     with open(args.train_ds, "rb") as f:
         train_ds = pickle.load(f)
-        train_loader = DataLoader(train_ds, batch_size=8, drop_last=True, shuffle=True)
+        train_loader = DataLoader(
+            train_ds,
+            batch_size=8,
+            drop_last=True,
+            shuffle=True)
 
     with open(args.test_ds, "rb") as f:
         test_ds = pickle.load(f)
-        test_loader = DataLoader(test_ds, batch_size=8, drop_last=True, shuffle=True)
+        test_loader = DataLoader(
+            test_ds,
+            batch_size=8,
+            drop_last=True,
+            shuffle=True)
 
     print_log("=> creating model {}".format(args.model), log)
 
@@ -265,7 +273,7 @@ def perform_attack(attacker, model, model_clean, train_loader, test_loader,
 
     # evaluate the test accuracy of clean model
     acc, val_loss, output_summary = validate(test_loader, model,
-                                                                    attacker.criterion, log, summary_output=True)
+                                             attacker.criterion, log, summary_output=True)
     tmp_df = pd.DataFrame(output_summary, columns=['top-1 output'])
     tmp_df['BFA iteration'] = 0
     tmp_df.to_csv(os.path.join(args.save_path, 'output_summary_BFA_0.csv'),
