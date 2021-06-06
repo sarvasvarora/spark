@@ -11,6 +11,8 @@ benchmark/
 
 models/__pycache__/
 
+data/
+
 
 save/*
 
