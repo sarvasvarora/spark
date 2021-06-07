@@ -1,0 +1,21 @@
+Using 5 GPUs!
+Traceback (most recent call last):
+  File "train_models/lstm_classifier.py", line 126, in <module>
+    app.run(main)
+  File "/home/sarvasvarora/.local/lib/python3.8/site-packages/absl/app.py", line 303, in run
+    _run_main(main, args)
+  File "/home/sarvasvarora/.local/lib/python3.8/site-packages/absl/app.py", line 251, in _run_main
+    sys.exit(main(argv))
+  File "train_models/lstm_classifier.py", line 116, in main
+    model.to(device)
+  File "/home/sarvasvarora/.local/lib/python3.8/site-packages/torch/nn/modules/module.py", line 673, in to
+    return self._apply(convert)
+  File "/home/sarvasvarora/.local/lib/python3.8/site-packages/torch/nn/modules/module.py", line 387, in _apply
+    module._apply(fn)
+  File "/home/sarvasvarora/.local/lib/python3.8/site-packages/torch/nn/modules/module.py", line 387, in _apply
+    module._apply(fn)
+  File "/home/sarvasvarora/.local/lib/python3.8/site-packages/torch/nn/modules/module.py", line 409, in _apply
+    param_applied = fn(param)
+  File "/home/sarvasvarora/.local/lib/python3.8/site-packages/torch/nn/modules/module.py", line 671, in convert
+    return t.to(device, dtype if t.is_floating_point() or t.is_complex() else None, non_blocking)
+RuntimeError: CUDA error: out of memory

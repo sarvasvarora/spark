@@ -4,7 +4,7 @@ from transformers import BertForSequenceClassification
 import pytorch_lightning as pl
 
 
-class IMDBSentimentClassifier(pl.LightningModule):
+class BERTClassifier(pl.LightningModule):
     def __init__(self):
         super().__init__()
         self.model = BertForSequenceClassification.from_pretrained('bert-base-cased')
@@ -26,5 +26,6 @@ class IMDBSentimentClassifier(pl.LightningModule):
         return optimizer
 
 def bert():
-    model = torch.load("/Users/sarvasvarora/dev/SPARK/BFA/model.pt")
+    model = BERTClassifier()
+    model.load_state_dict(torch.load("/home/sarvasvarora/spark/data/bert_model.pt", map_location=torch.device('cpu')))
     return model

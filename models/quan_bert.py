@@ -7,7 +7,7 @@ import re
 from .quantization import *
 
 
-class IMDBSentimentClassifier(pl.LightningModule):
+class BERTClassifier(pl.LightningModule):
     def __init__(self):
         super().__init__()
         self.model = BertForSequenceClassification.from_pretrained(
@@ -29,6 +29,7 @@ class IMDBSentimentClassifier(pl.LightningModule):
         optimizer = torch.optim.Adam(self.parameters(), lr=1e-5)
         return optimizer
 
+
 def replace_layers(model, old, new):
     for n, module in model.named_children():
         if len(list(module.children())) > 0:
@@ -39,10 +40,12 @@ def replace_layers(model, old, new):
             ## simple module
             in_features, out_features = (int(x.split('=')[1]) for x in re.findall(r"\w*_features=\d*", module.extra_repr()))
             new_layer = new(in_features, out_features)
-            new_layer.weight, new_layer.bias = module.weight, module.bias
+            new_layer.weight, new_layer.bias = module.weight.detach().clone(), module.bias.detach().clone()
             setattr(model, n, new_layer)
 
+
 def bert_quan():
-    model = torch.load("/Users/sarvasvarora/dev/SPARK/BFA/model.pt")
+    model = BERTClassifier()
+    model.load_state_dict(torch.load("/home/sarvasvarora/spark/data/bert_model.pt", map_location=torch.device('cpu')))
     replace_layers(model, torch.nn.Linear, quan_Linear)
     return model

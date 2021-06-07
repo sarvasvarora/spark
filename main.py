@@ -26,7 +26,9 @@ import copy
 import pandas as pd
 import numpy as np
 
-from models.quan_bert import IMDBSentimentClassifier
+from models.quan_bert import BERTClassifier
+from models.quan_lstm import LSTMClassifier
+
 
 model_names = sorted(name for name in models.__dict__
                      if name.islower() and not name.startswith("__")
@@ -42,15 +44,15 @@ parser.add_argument('--model',
                     default='bert',
                     type=str,
                     help='Model to use',
-                    choices=['bert', 'bert_quan'])
+                    choices=['bert', 'bert_quan', 'lstm', 'lstm_quan'])
 
 parser.add_argument('--train_ds',
-                    default='./train_ds.pickle',
+                    default='/home/sarvasvarora/spark/data/train_ds.pickle',
                     type=str,
                     help='Path to train dataset')
 
 parser.add_argument('--test_ds',
-                    default='./test_ds.pickle',
+                    default='/home/sarvasvarora/spark/data/test_ds.pickle',
                     type=str,
                     help='Path to test dataset')
 
@@ -183,7 +185,7 @@ def main():
         train_ds = pickle.load(f)
         train_loader = DataLoader(
             train_ds,
-            batch_size=8,
+            batch_size=args.attack_sample_size,
             drop_last=True,
             shuffle=True)
 
@@ -220,7 +222,7 @@ def main():
     # update the step_size once the model is loaded. This is used for
     # quantization.
     for m in net.modules():
-        if isinstance(m, quan_Linear):
+        if isinstance(m, quan_Linear) or isinstance(m, quan_LSTM):
             # simple step size update based on the pretrained model or weight
             # init
             m.__reset_stepsize__()
@@ -228,7 +230,7 @@ def main():
     # block for weight reset
     if args.reset_weight:
         for m in net.modules():
-            if isinstance(m, quan_Linear):
+            if isinstance(m, quan_Linear) or isinstance(m, quan_LSTM):
                 m.__reset_weight__()
                 # print(m.weight)
 

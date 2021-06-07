@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from torch import _VF
 from torch.autograd import Variable
 import torch.nn.functional as F
 
@@ -156,10 +157,10 @@ class quan_LSTM(nn.LSTM):
                 _f_weights.append(self._flat_weights[i + 3])
 
         if batch_sizes is None:
-            result = nn._VF.lstm(input, hx, _f_weights, self.bias, self.num_layers,
+            result = _VF.lstm(input, hx, _f_weights, self.bias, self.num_layers,
                                  self.dropout, self.training, self.bidirectional, self.batch_first)
         else:
-            result = nn._VF.lstm(input, batch_sizes, hx, _f_weights, self.bias,
+            result = _VF.lstm(input, batch_sizes, hx, _f_weights, self.bias,
                                  self.num_layers, self.dropout, self.training, self.bidirectional)
 
         output = result[0]
@@ -219,12 +220,17 @@ class quan_LSTM(nn.LSTM):
             except AttributeError:
                 flag = False
 
-            for i in range(0, n, 4):
-                self._flat_weights[i] = weights[i//2].detach().clone()
-                self._flat_weights[i+1] = weights[i//2 + 1].detach().clone()
-                if flag:
-                    self._flat_weights[i].grad = grads[i//2].detach().clone()
-                    self._flat_weights[i+1].grad = grads[i//2 + 1].detach().clone()
+            with torch.no_grad():
+                for i in range(0, n, 4):
+                    # self._flat_weights[i] = weights[i//2].detach().clone()
+                    # self._flat_weights[i+1] = weights[i//2 + 1].detach().clone()
+                    self._flat_weights[i].data = weights[i//2].data
+                    self._flat_weights[i+1].data = weights[i//2 + 1].data
+                    if flag:
+                        # self._flat_weights[i].grad = grads[i//2].detach().clone()
+                        # self._flat_weights[i+1].grad = grads[i//2 + 1].detach().clone()
+                        self._flat_weights[i].grad.data = grads[i//2].data
+                        self._flat_weights[i+1].grad.data = grads[i//2 + 1].data
 
         else:
             return

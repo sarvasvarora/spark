@@ -19,7 +19,7 @@ class BFA(object):
         # attributes for random attack
         self.module_list = []
         for name, m in model.named_modules():
-            if isinstance(m, quan_Linear):
+            if isinstance(m, quan_Linear) or isinstance(m, quan_LSTM):
                 self.module_list.append(name)
 
     def flip_bit(self, m):
