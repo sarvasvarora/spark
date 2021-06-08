@@ -49,7 +49,7 @@ def replace_layers(model, old, new):
     for n, module in model.named_children():
         if len(list(module.children())) > 0:
             ## compound module, go inside it
-            replace_layers(module, old, new)
+            replace_layers(module, old, xnew)
     
         if isinstance(module, old):
             ## simple module

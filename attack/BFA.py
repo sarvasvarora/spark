@@ -115,14 +115,14 @@ class BFA(object):
             self.n_bits2flip += 1
             # iterate all the quantized conv and linear layer
             for name, module in model.named_modules():
-                if isinstance(module, quan_Linear) or isinstance(m, quan_LSTM):
+                if isinstance(module, quan_Linear) or isinstance(module, quan_LSTM):
                     clean_weight = module.weight.data.detach()
                     attack_weight = self.flip_bit(module)
                     # change the weight to attacked weight and get loss
                     module.weight.data = attack_weight
 
-                    if isinstance(m, quan_LSTM):
-                        m.__update__("flat_weights")
+                    if isinstance(module, quan_LSTM):
+                        module.__update__("flat_weights")
 
                     output = model(data)
                     self.loss_dict[name] = self.criterion(output,
@@ -130,8 +130,8 @@ class BFA(object):
                     # change the weight back to the clean weight
                     module.weight.data = clean_weight
 
-                    if isinstance(m, quan_LSTM):
-                        m.__update__("flat_weights")
+                    if isinstance(module, quan_LSTM):
+                        module.__update__("flat_weights")
 
             # after going through all the layer, now we find the layer with max
             # loss

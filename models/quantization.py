@@ -212,7 +212,7 @@ class quan_LSTM(nn.LSTM):
                 self.weight.grad = torch.cat(grads) 
 
         elif mode == "flat_weights":
-            n = len(self._flat_weights)
+            n = self._flat_weights[0].size(0) # 'height' of each original weight parameter
             flag = True
             weights = torch.split(self.weight, n)
             try:
@@ -221,7 +221,7 @@ class quan_LSTM(nn.LSTM):
                 flag = False
 
             with torch.no_grad():
-                for i in range(0, n, 4):
+                for i in range(0, len(self._flat_weights), 4):
                     # self._flat_weights[i] = weights[i//2].detach().clone()
                     # self._flat_weights[i+1] = weights[i//2 + 1].detach().clone()
                     self._flat_weights[i].data = weights[i//2].data
