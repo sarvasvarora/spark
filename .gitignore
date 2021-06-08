@@ -13,6 +13,7 @@ models/__pycache__/
 
 data/
 
+logs/
 
 save/*
 
